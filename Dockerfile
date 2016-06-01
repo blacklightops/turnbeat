@@ -9,7 +9,7 @@ WORKDIR /opt/perspica
 ADD ./turnbeat /opt/perspica/turnbeat
 ADD ./turnbeat.yml /opt/perspica/turnbeat.yml
 
-ENV PORT 2004
-EXPOSE 2004
+ENV PORT 2014
+EXPOSE 2014
 
 CMD ["/opt/perspica/turnbeat", "-v", "-d", "reader,tcpinput,udpinput"]

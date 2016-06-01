@@ -53,13 +53,13 @@ input:
     minor_interval: 60
     major_interval: 900
 
-  udp_2004:
+  udp_2014:
     enabled: true
-    port: 2004
+    port: 2014
     type: "carbon"
 
-  tcp_2004:
+  tcp_2014:
     enabled: true
-    port: 2004
+    port: 2014
     type: "carbon"
 
