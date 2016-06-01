@@ -53,29 +53,13 @@ input:
     minor_interval: 60
     major_interval: 900
 
-  udp_1:
+  udp_2004:
     enabled: true
-    port: 3846
-    type: "tcollector"
+    port: 2004
+    type: "carbon"
 
-  syslog:
-    enabled: false
-    port: 1514
-    type: "syslog"
-
-  tail_1:
+  tcp_2004:
     enabled: true
-    filename: "/var/log/messages"
-
-  procfs:
-    enabled: false
-
-  packages:
-    enabled: false
-    sleep_interval: 30
-
-  tcp:
-    enabled: false
-    port: 3846
-    type: "tcollector"
+    port: 2004
+    type: "carbon"
 
