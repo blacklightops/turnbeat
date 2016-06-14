@@ -31,7 +31,7 @@ output:
     enabled: true
 filter:
   filters: ["$FILTERS"]
-:
+input:
   $TYPE_$PORT:
     enabled: true
     port: $PORT
