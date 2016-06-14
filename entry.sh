@@ -32,7 +32,7 @@ output:
 filter:
   filters: ["$FILTERS"]
 input:
-  $TYPE_$PORT:
+  ${TYPE}_${PORT}:
     enabled: true
     port: $PORT
     type: "$EVENTTYPE"
