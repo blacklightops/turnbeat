@@ -1,65 +1,16 @@
 ---
-############################# Shipper ############################################
-agent:
-
- # The name of the agent that publishes the network data. It can be used to group 
- # all the transactions sent by a single agent in the web interface.
- # If this options is not defined, the hostname is used.
- name:
-
- # The tags of the agent are included in their own field with each
- # transaction published. Tags make it easy to group transactions by different
- # logical properties.
- #tags: ["service1"]
-
- # Uncomment the following if you want to ignore transactions created
- # by the server on which the agent is installed. This option is useful
- # to remove duplicates if agents are installed on multiple servers.
- # ignore_outgoing: true
-
-############################# Output ############################################
-
-# Configure what outputs to use when sending the data collected by turnbeat.
-# You can enable one or multiple outputs by setting enabled option to true.
 output:
-
-  kafka:
-    enabled: false
-    host: "localhost"
-    topic: "pipeline-input"
-
-  file:
-    enabled: false
-    path: "/var/log"
-    filename: turnbeat
-    rotate_every_kb: 1000
-    number_of_files: 2
-
+  redis:
+    enabled: true
+    host: "redis"
+    port: 6379
+    Index: "turnbeat"
   stdout:
     enabled: true
-
 filter:
-#  filters: ["nop", "opentsdb"]
-  filters: ["opentsdb", "jsonexpander"]
-############################# Input #############################################
-
-# Configure what inputs to use when collecting data with turnbeat.
-# You can enable one or multiple inputs by setting enabled option to true.
+  filters: ["graphite"]
 input:
-
-  global:
-  # default intervals
-    tick_interval: 15
-    minor_interval: 60
-    major_interval: 900
-
-  udp_2004:
+  tcp_2014:
     enabled: true
-    port: 2004
+    port: 2014
     type: "carbon"
-
-  tcp_2004:
-    enabled: true
-    port: 2004
-    type: "carbon"
-

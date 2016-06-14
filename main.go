@@ -7,6 +7,7 @@ import (
 	"github.com/blacklightops/libbeat/filters"
 	"github.com/blacklightops/libbeat/filters/nop"
 	"github.com/blacklightops/libbeat/filters/opentsdb"
+	"github.com/blacklightops/libbeat/filters/graphite"
   "github.com/blacklightops/libbeat/filters/jsonexpander"
 	"github.com/blacklightops/libbeat/logp"
 	"github.com/blacklightops/libbeat/publisher"
@@ -26,6 +27,7 @@ var Name = "turnbeat"
 var EnabledFilterPlugins map[filters.Filter]filters.FilterPlugin = map[filters.Filter]filters.FilterPlugin{
 	filters.NopFilter:      new(nop.Nop),
 	filters.OpenTSDBFilter: new(opentsdb.OpenTSDB),
+	filters.GraphiteFilter: new(graphite.Graphite),
   filters.JSONExpanderFilter: new(jsonexpander.JSONExpander),
 }
 
