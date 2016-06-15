@@ -24,7 +24,7 @@ cat << EOF > /opt/perspica/turnbeat.yml
 ---
 output:
   redis:
-    enabled: true
+    enabled: false
     host: "redis"
     port: 6379
   stdout:
@@ -38,4 +38,4 @@ input:
     type: "$EVENTTYPE"
 EOF
 
-exec /opt/perspica/turnbeat
+exec /opt/perspica/turnbeat -v -d tcpinput

@@ -7,6 +7,7 @@ import (
 	"github.com/blacklightops/libbeat/common"
 	"github.com/blacklightops/libbeat/logp"
 	"github.com/blacklightops/turnbeat/inputs"
+  "crypto/tls"
 	"io"
 	"net"
 	"strconv"
@@ -16,7 +17,10 @@ import (
 type TcpInput struct {
 	Config inputs.MothershipConfig
 	Port   int    /* the port to listen on */
+  Tls    boolean /* Whether or not to use TLS */
 	Type   string /* the type to add to events */
+  Key    string /* the TLS Key File */
+  Cert   string /* the TLS Cert File */
 }
 
 func (l *TcpInput) InputType() string {
@@ -40,7 +44,22 @@ func (l *TcpInput) Init(config inputs.MothershipConfig) error {
 	}
 	l.Type = config.Type
 
+  if config.Tls {
+    l.Tls = true
+  	if config.Key == "" {
+  		return errors.New("No TLS Key specified")
+  	}
+  	if config.Cert == "" {
+  		return errors.New("No TLS Certificate specified")
+  	}
+    l.Key = config.Key
+    l.Cert = config.Cert
+  } else {
+    l.Tls = false
+  }
+
 	logp.Debug("tcpinput", "Using Port %d", l.Port)
+	logp.Debug("tcpinput", "Using TLS %b", l.Tls)
 	logp.Debug("tcpinput", "Adding Event Type %s", l.Type)
 
 	return nil
@@ -52,7 +71,18 @@ func (l *TcpInput) GetConfig() inputs.MothershipConfig {
 
 func (l *TcpInput) Run(output chan common.MapStr) error {
 	logp.Info("[TcpInput] Running TCP Input")
-	server, err := net.Listen("tcp", ":"+strconv.Itoa(l.Port))
+  if l.Tls {
+    cer, err := tls.LoadX509KeyPair(l.Key, l.Cert)
+    if err != nil {
+        log.Println(err)
+        return
+    }
+    config := &tls.Config{Certificates: []tls.Certificate{cer}}
+    server, err := tls.Listen("tcp", ":"+strconf.Itoa(l.Port), config)
+    defer server.Close()
+  } else {
+  	server, err := net.Listen("tcp", ":"+strconv.Itoa(l.Port))
+  }
 	if err != nil {
 		logp.Err("couldn't start listening: " + err.Error())
 		return nil
