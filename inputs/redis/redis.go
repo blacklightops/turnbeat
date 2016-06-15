@@ -6,7 +6,6 @@ import (
 	"github.com/blacklightops/libbeat/logp"
 	"github.com/blacklightops/turnbeat/inputs"
 	"github.com/garyburd/redigo/redis"
-	"net"
 	"fmt"
 	"time"
 )
@@ -79,9 +78,8 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 
 	// dispatch the master listen thread
 	go func(server redis.Conn) {
-		var args []interface{}
 		for {
-			exists, err := redis.Bool(server.Do("EXISTS", append(args, l.Key)))
+			exists, err := redis.Bool(server.Do("EXISTS", redis.Args{}.Add(l.Key)))
 			if err != nil {
 				logp.Err("An error occured while executing EXISTS command")
 				return
@@ -90,7 +88,7 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 				logp.Err("Key %s does not exist!", l.Key)
 				return
 			}
-			handleConn(server, output)
+			l.handleConn(server, output)
 		}
 	}(server)
 	return nil
@@ -99,8 +97,7 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr) {
 	var offset int64 = 0
 	var line uint64 = 0
-	var bytesread uint65 = 0
-	var args = []interface{}
+	var bytesread uint64 = 0
 
 	logp.Debug("redisinput", "Reading events from %s", l.Key)
 
@@ -110,10 +107,9 @@ func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr) {
 	}
 
 	for {
-		args = []interface{}
-		reply, err := server.Do("LPOP", append(args, l.Key))
+		reply, err := server.Do("LPOP", redis.Args{}.Add(l.Key))
 		text, err := redis.String(reply, err)
-		bytesread += len(text)
+		bytesread += uint64(len(text))
 
 		if err != nil {
 			logp.Info("Unexpected state reading from %s; error: %s\n", l.Key, err)
@@ -138,7 +134,6 @@ func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr) {
 
 		logp.Debug("redisinput", "InputEvent: %v", event)
 		output <- event // ship the new event downstream
-		client.Write([]byte("OK"))
 	}
 	logp.Debug("redisinput", "Finished reading from %s", l.Key)
 }
