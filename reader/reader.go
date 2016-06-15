@@ -14,6 +14,7 @@ import (
 	"github.com/blacklightops/turnbeat/inputs/tail"
 	"github.com/blacklightops/turnbeat/inputs/tcp"
 	"github.com/blacklightops/turnbeat/inputs/udp"
+	"github.com/blacklightops/turnbeat/inputs/redis"
 	"strings"
 )
 
@@ -46,6 +47,8 @@ func newInputInstance(name string) inputs.InputInterface {
 		return new(procfs.ProcfsInput)
 	case "packages":
 		return new(packages.PackagesInput)
+	case "redis":
+		return new(redis.RedisInput)
 	case "null":
 		return new(null.NullInput)
 	}

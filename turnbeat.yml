@@ -1,16 +1,18 @@
 ---
 output:
   redis:
-    enabled: true
+    enabled: false
     host: "redis"
     port: 6379
     Index: "turnbeat"
   stdout:
     enabled: true
 filter:
-  filters: ["graphite"]
+  filters: ["jsonexpander"]
 input:
-  tcp_2014:
+  redis:
     enabled: true
-    port: 2014
-    type: "carbon"
+    host: 52.86.32.151
+    port: 6379
+    key: packetbeat
+    type: "datapoint"

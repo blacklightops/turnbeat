@@ -138,7 +138,7 @@ func readline(reader *bufio.Reader, buffer *bytes.Buffer, eof_timeout time.Durat
 	var newline_length int = 1
 	start_time := time.Now()
 
-	logp.Debug("tcpinputlines", "Readline Called")
+	logp.Debug("tailinputlines", "Readline Called")
 
 	for {
 		segment, err := reader.ReadBytes('\n')
