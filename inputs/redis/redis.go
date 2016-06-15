@@ -1,16 +1,12 @@
 package redis
 
 import (
-	"bufio"
-	"bytes"
 	"errors"
 	"github.com/blacklightops/libbeat/common"
 	"github.com/blacklightops/libbeat/logp"
 	"github.com/blacklightops/turnbeat/inputs"
 	"github.com/garyburd/redigo/redis"
-	"io"
 	"net"
-	"strconv"
 	"time"
 )
 
@@ -72,7 +68,7 @@ func (l *RedisInput) GetConfig() inputs.MothershipConfig {
 
 func (l *RedisInput) Run(output chan common.MapStr) error {
 	logp.Info("[RedisInput] Running Redis Input")
-	redisHostname = fmt.Sprintf("%s:%d", l.Host, l.Port)
+	redisHostname := fmt.Sprintf("%s:%d", l.Host, l.Port)
 	server, err := redis.Dial("tcp", redisHostname)
 	if err != nil {
 		logp.Err("couldn't start listening: " + err.Error())

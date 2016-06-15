@@ -7,7 +7,10 @@ import (
 
 type MothershipConfig struct {
 	Enabled        bool
+	Host           string
 	Port           int
+	Key	           string
+	DB             int
 	Flush_interval *int
 	Max_retries    *int
 	Type           string
