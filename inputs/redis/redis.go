@@ -7,6 +7,7 @@ import (
 	"github.com/blacklightops/turnbeat/inputs"
 	"github.com/garyburd/redigo/redis"
 	"net"
+	"fmt"
 	"time"
 )
 
@@ -83,11 +84,11 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 			exists, err := redis.Bool(server.Do("EXISTS", append(args, l.Key)))
 			if err != nil {
 				logp.Err("An error occured while executing EXISTS command")
-				return nil
+				return
 			}
 			if exists != true {
 				logp.Err("Key %s does not exist!", l.Key)
-				return nil;
+				return
 			}
 			handleConn(server, output)
 		}
@@ -95,9 +96,11 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 	return nil
 }
 
-func (l *RedisInput) handleConn(client net.Conn, output chan common.MapStr) {
+func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr) {
 	var offset int64 = 0
 	var line uint64 = 0
+	var bytesread uint65 = 0
+	var args = []interface{}
 
 	logp.Debug("redisinput", "Reading events from %s", l.Key)
 
@@ -108,7 +111,7 @@ func (l *RedisInput) handleConn(client net.Conn, output chan common.MapStr) {
 
 	for {
 		args = []interface{}
-		reply, err := server.Do("LPOP", appends(args, l.Key))
+		reply, err := server.Do("LPOP", append(args, l.Key))
 		text, err := redis.String(reply, err)
 		bytesread += len(text)
 
