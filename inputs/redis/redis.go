@@ -218,14 +218,14 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
         	return events, line, offset, nil
 		}
 
-        if thisMin <= prevMin || prevMin == 0 {
-        	prevTime = thisTime
-        	events = append(events, expanded_event)
-        } else {
-        	pushScript.Do(server, key, text)
-        	return events, line, offset, nil
-        }
-    }
+		if thisMin <= prevMin || prevMin == 0 {
+			prevTime = thisTime
+			events = append(events, expanded_event)
+		} else {
+			pushScript.Do(server, key, text)
+			return events, line, offset, nil
+		}
+	}
 	return events, line, offset, nil
 }
 
