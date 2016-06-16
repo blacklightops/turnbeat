@@ -7,6 +7,8 @@ import (
 	"github.com/blacklightops/turnbeat/inputs"
 	"github.com/garyburd/redigo/redis"
 	"fmt"
+	"encoding/json"
+	"strconv"
 	"time"
 	"strings"
 )
@@ -70,7 +72,8 @@ func (l *RedisInput) GetConfig() inputs.MothershipConfig {
 func (l *RedisInput) Run(output chan common.MapStr) error {
 	logp.Debug("redisinput", "Running Redis Input")
 	// dispatch the master listen thread
-	var existsScript = redis.NewScript(1, `return redis.call('EXISTS', KEYS[1])`)
+	//var existsScript = redis.NewScript(1, `return redis.call('EXISTS', KEYS[1])`)
+	var keysScript = redis.NewScript(1, `return redis.call('KEYS', KEYS[1])`)
 
 	go func() {
 		redisURL := fmt.Sprintf("redis://%s:%d/%d", l.Host, l.Port, l.DB)
@@ -86,19 +89,24 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 				return
 			}
 			logp.Debug("redisinput", "Connected to Redis Server")
-			reply, err := existsScript.Do(server, l.Key)
+
+			reply, err := keysScript.Do(server, "*")
 			if err != nil {
-				logp.Err("An error occured while executing EXISTS command: %s\n", err)
+				logp.Err("An error occured while executing KEYS command: %s\n", err)
 				return
 			}
-			exists, err := redis.Int(reply, err)
+
+			keys, err := redis.Strings(reply, err)
 			if err != nil {
-				logp.Err("An error occured while converting reply to Int: %s\n", err)
+				logp.Err("An error occured while converting reply to String: %s\n", err)
 				return
 			}
-			if exists == 1 {
-				lineCount, err := l.handleConn(server, output)
+
+			for _, key := range keys {
+				logp.Debug("redisinput", "key is %s", key)
+				lineCount, err := l.handleConn(server, output, key)
 				if err == nil {
+					logp.Debug("redisinput", "Read %v events", lineCount)
 					backOffCount = 0
 					backOffDuration = time.Duration(backOffCount) * time.Second
 					time.Sleep(backOffDuration)
@@ -107,68 +115,153 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 					backOffDuration = time.Duration(backOffCount) * time.Second
 					time.Sleep(backOffDuration)
 				}
-				logp.Debug("redisinput", "Read %v events", lineCount)
-			} else {
-				logp.Info("[RedisInput] Key %s does not exist", l.Key)
-				backOffCount++
-				backOffDuration = time.Duration(backOffCount) * time.Second
-				time.Sleep(backOffDuration)
-			}
+   			}
 			defer server.Close()
 		}
 	}()
 	return nil
 }
 
-func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr) (uint64, error) {
-	var offset int64 = 0
-	var line uint64 = 0
-	var bytesread uint64 = 0
-	var popScript = redis.NewScript(1, `return redis.call('LPOP', KEYS[1])`)
+func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr, key string) (uint64, error) {
+	event_slice, offset, line, err := l.readKey(server, key)
 
-	logp.Debug("redisinput", "Reading events from %s", l.Key)
+	if err != nil {
+		logp.Err("an error reading %s: %s\n", key, err)
+	}
 
 	now := func() time.Time {
 		t := time.Now()
 		return t
 	}
 
+	event := common.MapStr{}
+	event["offset"] = offset
+	event["count"]	= line
+	event["type"]	= strings.TrimSpace(l.Type)
+	event["source"] = strings.TrimSpace(key)
+	event["datapoints"] = event_slice
+
+	event.EnsureTimestampField(now)
+	event.EnsureCountField()
+
+	logp.Debug("redisinputlines", "event: %v", event)
+	if event_slice != nil {
+		output <- event // ship the new event downstream
+	}
+
+	logp.Debug("redisinput", "Finished reading from %s", key)
+	return line, nil
+}
+
+func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, uint64, uint64, error) {
+	var offset uint64 = 0
+	var line uint64 = 0
+	var prevTime uint64 = 0
+	var thisTime uint64 = 0
+	
+	var events []common.MapStr
+
+	var popScript = redis.NewScript(1, `return redis.call('LPOP', KEYS[1])`)
+	var pushScript = redis.NewScript(2, `return redis.call('LPUSH', KEYS[1], KEYS[2])`)
+
+	logp.Debug("redisinput", "Reading events from %s", key)
+
 	for {
-		reply, err := popScript.Do(server, l.Key)
+		reply, err := popScript.Do(server, key)
 		if err != nil {
-			logp.Info("[RedisInput] Unexpected state reading from %s; error: %s\n", l.Key, err)
-			return line, err
+			logp.Info("[RedisInput] Unexpected state reading from %s; error: %s\n", key, err)
+			return nil, line, offset, err
 		}
+	
 		if reply == nil {
-			logp.Debug("redisinputlines", "No values to read in LIST: %s", l.Key)
-			return line, nil
+			logp.Debug("redisinputlines", "No values to read in LIST: %s", key)
+			return events,line, offset, nil
 		}
+	
 		text, err := redis.String(reply, err)
 		if err != nil {
 			logp.Info("[RedisInput] Unexpected state converting reply to String; error: %s\n", err)
-			return line, err
+			return nil, line, offset, err
 		}
-		bytesread += uint64(len(text))
-
-		logp.Debug("redisinputlines", "New Line: %s", &text)
-
+		offset += uint64(len(text))
 		line++
 
 		event := common.MapStr{}
-		event["source"] = strings.TrimSpace(l.Key)
+		event["source"] = strings.TrimSpace(key)
 		event["offset"] = offset
 		event["line"] = line
 		event["message"] = &text
 		event["type"] = strings.TrimSpace(l.Type)
+		expanded_event, err := l.Filter(event)
 
-		event.EnsureTimestampField(now)
-		event.EnsureCountField()
+		metricTime, err := strconv.ParseInt(expanded_event["metric_timestamp"].(string), 10, 64)
+		if err != nil {
+			logp.Err("An error parsing the metric_timestamp: %s\n", err)
+		}
+		thisTime = uint64(metricTime)
 
-		offset += int64(bytesread)
+		_, nowMin, _ := time.Now().Clock()
 
-		logp.Debug("redisinput", "InputEvent: %v", event)
-		output <- event // ship the new event downstream
+		prevTime_Time := time.Unix(int64(prevTime), 0)
+		_, prevMin, _ := prevTime_Time.Clock()
+
+		thisTime_Time := time.Unix(int64(thisTime), 0)
+		_, thisMin, _ := thisTime_Time.Clock()
+
+		event["timestamp"] = thisTime_Time.Format("2006-01-02T15:04:05Z07:00")
+
+		logp.Debug("timestuff", "This Minute: %v, Prev Minute: %v, Now Minute: %v", thisMin, prevMin, nowMin)
+		// If it has not been a minute since this event happened, put it back in the list.
+		if nowMin == thisMin {
+			logp.Debug("redisinput", "Skipping, not old enough")
+			pushScript.Do(server, key, text)
+        	return events, line, offset, nil
+		}
+
+        if thisMin <= prevMin || prevMin == 0 {
+        	prevTime = thisTime
+        	events = append(events, expanded_event)
+        } else {
+        	pushScript.Do(server, key, text)
+        	return events, line, offset, nil
+        }
+    }
+	return events, line, offset, nil
+}
+
+func (l *RedisInput) Filter(event common.MapStr) (common.MapStr, error) {
+	text := event["message"]
+	text_string := text.(*string)
+	//logp.Debug("redisinput", "Attempting to expand: %v", event)
+
+	if l.isJSONString(*text_string) {
+		data := []byte(*text_string)
+		err := json.Unmarshal(data, &event)
+		if err != nil {
+			logp.Err("redisinput", "Could not expand json data")
+			return event, nil
+		}
+	} else {
+		logp.Debug("redisinput", "Message does not appear to be JSON data: %s", text_string)
 	}
-	logp.Debug("redisinput", "Finished reading from %s", l.Key)
-	return line, nil
+
+	now := func() time.Time {
+		t := time.Now()
+		return t
+	}
+
+	event.EnsureTimestampField(now)
+
+	//logp.Debug("redisinput", "Final Event: %v", event)
+	return event, nil
+}
+
+func (l *RedisInput) isJSONString(s string) bool {
+	var js interface{}
+	return json.Unmarshal([]byte(s), &js) == nil
+}
+
+func (l *RedisInput) isJSON(s string) bool {
+	var js map[string]interface{}
+	return json.Unmarshal([]byte(s), &js) == nil
 }
