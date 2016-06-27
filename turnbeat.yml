@@ -1,14 +1,81 @@
 ---
+############################# Shipper ############################################
+agent:
+
+ # The name of the agent that publishes the network data. It can be used to group
+ # all the transactions sent by a single agent in the web interface.
+ # If this options is not defined, the hostname is used.
+ name:
+
+ # The tags of the agent are included in their own field with each
+ # transaction published. Tags make it easy to group transactions by different
+ # logical properties.
+ #tags: ["service1"]
+
+ # Uncomment the following if you want to ignore transactions created
+ # by the server on which the agent is installed. This option is useful
+ # to remove duplicates if agents are installed on multiple servers.
+ # ignore_outgoing: true
+
+############################# Output ############################################
+
+# Configure what outputs to use when sending the data collected by turnbeat.
+# You can enable one or multiple outputs by setting enabled option to true.
 output:
+
+  kafka:
+    enabled: false
+    host: "localhost"
+    topic: "pipeline-input"
+
+  file:
+    enabled: false
+    path: "/var/log"
+    filename: turnbeat
+    rotate_every_kb: 1000
+    number_of_files: 2
+
   stdout:
     enabled: true
+
 filter:
-  filters: ["jsonexpander"]
+#  filters: ["nop", "opentsdb"]
+  filters: []
+############################# Input #############################################
+
+# Configure what inputs to use when collecting data with turnbeat.
+# You can enable one or multiple inputs by setting enabled option to true.
 input:
-  redis:
+
+  global:
+  # default intervals
+    tick_interval: 15
+    minor_interval: 60
+    major_interval: 900
+
+  udp_1:
     enabled: true
-    host: "52.86.32.151"
-    port: 6379
-    db: 0
-    key: "packetbeat"
-    type: "datapoint"
+    port: 3846
+    type: "tcollector"
+
+  syslog:
+    enabled: false
+    port: 1514
+    type: "syslog"
+
+  tail_1:
+    enabled: true
+    filename: "/var/log/messages"
+
+  procfs:
+    enabled: false
+
+  packages:
+    enabled: false
+    sleep_interval: 30
+
+  tcp:
+    enabled: false
+    port: 3846
+    type: "tcollector"
+

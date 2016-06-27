@@ -1,0 +1,19 @@
+---
+output:
+  kafka:
+    enabled: false
+    host: "localhost"
+    topic: "pipeline-input"
+  stdout:
+    enabled: true
+filter:
+  filters: ["nop"]
+input:
+  redis:
+    enabled: true
+    host: "localhost"
+    port: 16379
+    db: 0
+    key: "turnbeat"
+    index: "turnbeat"
+    type: "datapoint"
