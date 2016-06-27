@@ -71,8 +71,6 @@ func (l *RedisInput) GetConfig() inputs.MothershipConfig {
 
 func (l *RedisInput) Run(output chan common.MapStr) error {
 	logp.Debug("redisinput", "Running Redis Input")
-	// dispatch the master listen thread
-	//var existsScript = redis.NewScript(1, `return redis.call('EXISTS', KEYS[1])`)
 	var keysScript = redis.NewScript(1, `return redis.call('KEYS', KEYS[1])`)
 
 	go func() {
@@ -115,7 +113,7 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 					backOffDuration = time.Duration(backOffCount) * time.Second
 					time.Sleep(backOffDuration)
 				}
-   			}
+			}
 			defer server.Close()
 		}
 	}()
@@ -158,7 +156,7 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 	var line uint64 = 0
 	var prevTime uint64 = 0
 	var thisTime uint64 = 0
-	
+
 	var events []common.MapStr
 
 	var popScript = redis.NewScript(1, `return redis.call('LPOP', KEYS[1])`)
@@ -172,12 +170,12 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 			logp.Info("[RedisInput] Unexpected state reading from %s; error: %s\n", key, err)
 			return nil, line, offset, err
 		}
-	
+
 		if reply == nil {
 			logp.Debug("redisinputlines", "No values to read in LIST: %s", key)
 			return events,line, offset, nil
 		}
-	
+
 		text, err := redis.String(reply, err)
 		if err != nil {
 			logp.Info("[RedisInput] Unexpected state converting reply to String; error: %s\n", err)
@@ -211,21 +209,33 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 		event["timestamp"] = thisTime_Time.Format("2006-01-02T15:04:05Z07:00")
 
 		logp.Debug("timestuff", "This Minute: %v, Prev Minute: %v, Now Minute: %v", thisMin, prevMin, nowMin)
+
 		// If it has not been a minute since this event happened, put it back in the list.
+		// TODO: change this to see if event is older than 60 seconds
 		if nowMin == thisMin {
 			logp.Debug("redisinput", "Skipping, not old enough")
+			logp.Debug("timestuff", "pushing event: this min is still the current min")
 			pushScript.Do(server, key, text)
-        	return events, line, offset, nil
-		}
-
-		if thisMin <= prevMin || prevMin == 0 {
-			prevTime = thisTime
-			events = append(events, expanded_event)
+			if len(events) > 0 {
+				logp.Debug("timestuff", "returning previously collected events")
+				return events, line, offset, nil
+			} else {
+				logp.Debug("timestuff", "sleeping 5 seconds, no collected events yet")
+				time.Sleep(5 * time.Second)
+			}
 		} else {
-			pushScript.Do(server, key, text)
-			return events, line, offset, nil
+			if thisMin <= prevMin || prevMin == 0 {
+				prevTime = thisTime
+				logp.Debug("timestuff", "appending event: this min is older than prev min, or prev min is 0")
+				events = append(events, expanded_event)
+			} else {
+				pushScript.Do(server, key, text)
+				logp.Debug("timestuff", "pushing event and returning: this min is later than prev minute")
+				return events, line, offset, nil
+			}
 		}
 	}
+	logp.Debug("timestuff", "exited for loop, returning events")
 	return events, line, offset, nil
 }
 
