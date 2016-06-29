@@ -1,11 +1,17 @@
 ---
 output:
+  redis:
+    enabled: true
+    host: "localhost"
+    port: 16379
+    key: "turnbeat"
+    db: 4
   kafka:
     enabled: false
     host: "localhost"
     topic: "pipeline-input"
   stdout:
-    enabled: true
+    enabled: false
 filter:
   filters: ["nop"]
 input:

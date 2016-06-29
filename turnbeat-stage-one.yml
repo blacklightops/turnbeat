@@ -1,13 +1,17 @@
 ---
 output:
+  tcp:
+    enable: false
+    host: relay-ingest-a.infra.perspica.io
+    port: 2014
   redis:
-    enabled: true
+    enabled: false
     host: "localhost"
     port: 16379
     key: "turnbeat"
     db: 0
   stdout:
-    enabled: false
+    enabled: true
 filter:
   filters: ["graphite"]
 input:

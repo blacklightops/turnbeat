@@ -20,15 +20,33 @@ if [ -z ${FILTERS} ]; then
     exit 1
 fi
 
+if [ -z ${REDISKEY} ]; then
+  REDISKEY=turnbeat
+fi
+
+if [ -z ${REDISHOST} ]; then
+  REDISHOST=redis
+fi
+
+if [ -z ${REDISPORT} ]; then
+  REDISPORT=6379
+fi
+
+if [ -z ${STDOUT} ]; then
+  STDOUT=false
+fi
+
 cat << EOF > /opt/perspica/turnbeat.yml
 ---
 output:
   redis:
-    enabled: true
-    host: "redis"
-    port: 6379
+    enabled: false
+    host: $REDISHOST
+    port: $REDISPORT
+    key: $REDISKEY
+    db: 0
   stdout:
-    enabled: true
+    enabled: $STDOUT
 filter:
   filters: ["$FILTERS"]
 input:

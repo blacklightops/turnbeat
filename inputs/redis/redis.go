@@ -22,6 +22,28 @@ type RedisInput struct {
 	Type	string	/* the type to add to events */
 }
 
+/*
+        {
+            "count": 1,
+            "index": "CREASY01-MBP01",
+            "line": 715,
+            "message": "CREASY01-MBP01.interface-bridge0.if_octets.tx 0.000000 1466995490",
+            "metric_name": "interface-bridge0.if_octets.tx",
+            "metric_tags": "datacenter=CREASY01 host=MBP01",
+            "metric_tags_map": {
+                "datacenter": "CREASY01",
+                "host": "MBP01"
+            },
+            "metric_timestamp": "1466995490",
+            "metric_value": "0.000000",
+            "offset": 45810,
+            "shipper": "Jonathans-MacBook-Pro.local",
+            "source": "[::1]:61956",
+            "timestamp": "2016-06-26T21:44:50-05:00",
+            "type": "carbon"
+        }
+*/
+
 func (l *RedisInput) InputType() string {
 	return "RedisInput"
 }
@@ -218,6 +240,10 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 			pushScript.Do(server, key, text)
 			if len(events) > 0 {
 				logp.Debug("timestuff", "returning previously collected events")
+				events, err := l.GroupEvents(events)
+				if err != nil {
+					logp.Err("An error occured while grouping the events: %v\n", err)
+				}
 				return events, line, offset, nil
 			} else {
 				logp.Debug("timestuff", "sleeping 5 seconds, no collected events yet")
@@ -231,12 +257,62 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 			} else {
 				pushScript.Do(server, key, text)
 				logp.Debug("timestuff", "pushing event and returning: this min is later than prev minute")
+				events, err := l.GroupEvents(events)
+				if err != nil {
+					logp.Err("An error occured while grouping the events: %v\n", err)
+				}
 				return events, line, offset, nil
 			}
 		}
 	}
 	logp.Debug("timestuff", "exited for loop, returning events")
+	events, err := l.GroupEvents(events)
+	if err != nil {
+		logp.Err("An error occured while grouping the events: %v\n", err)
+	}
 	return events, line, offset, nil
+}
+
+// Seperate events by metric_name, average the values for each metric, emit averaged metrics
+func (l *RedisInput) GroupEvents(events []common.MapStr) ([]common.MapStr, error) {
+	var metric_name string
+	var empty_events []common.MapStr
+	sorted_events := map[string][]common.MapStr{}
+	for _, event := range events {
+		metric_name = event["metric_name"].(string)
+		if sorted_events[metric_name] == nil {
+			sorted_events[metric_name] = empty_events
+		}
+		sorted_events[metric_name] = append(sorted_events[metric_name], event)
+	}
+	output_events, err := l.averageSortedEvents(sorted_events)
+	return output_events, err
+}
+
+func (l *RedisInput) averageSortedEvents(sorted_events map[string][]common.MapStr) ([]common.MapStr, error) {
+	var output_events []common.MapStr
+	var merged_event common.MapStr
+	var metric_value_string string
+	var metric_value_bytes []byte
+	metric_value := 0.0
+	for _, events := range sorted_events {
+		metric_value = 0.0
+		merged_event = common.MapStr{}
+		for _, event := range events {
+			merged_event.Update(event)
+			logp.Debug("groupstuff", "metric value: %v", event["metric_value"])
+			metric_value_string = event["metric_value"].(string)
+			metric_value_bytes = []byte(metric_value_string)
+			metric_value += float64(common.Bytes_Ntohll(metric_value_bytes))
+		}
+		logp.Debug("groupstuff", "the summed values is %v", metric_value)
+		logp.Debug("groupstuff", "the length is %v", float64(len(events)))
+		metric_value = metric_value / float64(len(events))
+		logp.Debug("groupstuff", "the avg value is %v", metric_value)
+		merged_event["metric_value"] = metric_value
+		output_events = append(output_events, merged_event)
+	}
+	return output_events, nil
 }
 
 func (l *RedisInput) Filter(event common.MapStr) (common.MapStr, error) {
