@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 if [ -z ${TYPE} ]; then
     echo "Must Specifiy TYPE variable" 1>&2
     echo "Options are tcp udp syslog" 1>&2
@@ -20,40 +20,32 @@ if [ -z ${FILTERS} ]; then
     exit 1
 fi
 
-if [ -z ${REDISKEY} ]; then
-  REDISKEY=turnbeat
-fi
-
-if [ -z ${REDISHOST} ]; then
-  REDISHOST=redis
-fi
-
-if [ -z ${REDISPORT} ]; then
-  REDISPORT=6379
-fi
-
-if [ -z ${STDOUT} ]; then
-  STDOUT=false
-fi
-
 cat << EOF > /opt/perspica/turnbeat.yml
 ---
 output:
   redis:
-    enabled: false
+    enabled: $REDIS
     host: $REDISHOST
     port: $REDISPORT
     key: $REDISKEY
-    db: 0
+    db: $REDISDB
   stdout:
     enabled: $STDOUT
 filter:
   filters: ["$FILTERS"]
 input:
+  redis:
+    enabled: $REDISIN
+    host: $REDISINHOST
+    port: $REDISINPORT
+    db: $REDISINDB
+    key: $REDISINKEY
+    index: $REDISINKEY
+    type: $REDISINTYPE
   ${TYPE}_${PORT}:
-    enabled: true
+    enabled: $TCPIN
     port: $PORT
     type: "$EVENTTYPE"
 EOF
 
-exec /opt/perspica/turnbeat
+exec /opt/perspica/turnbeat $DEBUGOPTS
