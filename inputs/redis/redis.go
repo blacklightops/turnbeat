@@ -143,7 +143,7 @@ func (l *RedisInput) Run(output chan common.MapStr) error {
 }
 
 func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr, key string) (uint64, error) {
-	event_slice, offset, line, err := l.readKey(server, key)
+	event_slice, offset, timestamp, tag_string, err := l.readKey(server, key)
 
 	if err != nil {
 		logp.Err("an error reading %s: %s\n", key, err)
@@ -154,12 +154,31 @@ func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr, ke
 		return t
 	}
 
+	parsed_tags := strings.Fields(tag_string)
+	tags := make(map[string]string)
+
+	for _, v := range parsed_tags {
+		tag := strings.Split(v, "=")
+		tags[tag[0]] = tag[1]
+	}
+
+	t := time.Unix(timestamp, 0)
+	data, _ := json.Marshal(t)
+	
+// check that metric_name exists and metric_value
+	metric_event := common.MapStr{}
+	for _, event := range event_slice {
+		metric_event[event["metric_name"].(string)] = event["metric_value"].(string)
+	}
+
 	event := common.MapStr{}
+	event["name"] = strings.TrimSpace(key)
 	event["offset"] = offset
-	event["count"]	= line
+	event["count"]	= len(event_slice)
 	event["type"]	= strings.TrimSpace(l.Type)
-	event["source"] = strings.TrimSpace(key)
-	event["datapoints"] = event_slice
+    event["tags"] = tags
+	event["metrics"] = metric_event
+	event["timestamp"] = string(data)
 
 	event.EnsureTimestampField(now)
 	event.EnsureCountField()
@@ -170,10 +189,10 @@ func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr, ke
 	}
 
 	logp.Debug("redisinput", "Finished reading from %s", key)
-	return line, nil
+	return uint64(len(event_slice)), nil
 }
 
-func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, uint64, uint64, error) {
+func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, uint64, int64, string, error) {
 	var offset uint64 = 0
 	var line uint64 = 0
 	var prevTime uint64 = 0
@@ -190,18 +209,18 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 		reply, err := popScript.Do(server, key)
 		if err != nil {
 			logp.Info("[RedisInput] Unexpected state reading from %s; error: %s\n", key, err)
-			return nil, line, offset, err
+			return nil, line, 0, "", err
 		}
 
 		if reply == nil {
 			logp.Debug("redisinputlines", "No values to read in LIST: %s", key)
-			return events,line, offset, nil
+			return events, line, int64(thisTime), "", nil
 		}
 
 		text, err := redis.String(reply, err)
 		if err != nil {
 			logp.Info("[RedisInput] Unexpected state converting reply to String; error: %s\n", err)
-			return nil, line, offset, err
+			return nil, line, 0, "", err
 		}
 		offset += uint64(len(text))
 		line++
@@ -213,6 +232,24 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 		event["message"] = &text
 		event["type"] = strings.TrimSpace(l.Type)
 		expanded_event, err := l.Filter(event)
+
+		if _, present := expanded_event["metric_timestamp"]; present == false {
+			if _, present := expanded_event["timestamp"]; present == false {
+				logp.Err("This event has no timestamp field: %v\n", event)
+				continue
+			}
+			expanded_event["metric_timestamp"] = expanded_event["timestamp"]
+		}
+
+		if _, present := expanded_event["metric_name"]; present == false {
+			logp.Err("No metric_name found for: %v", event)
+			continue
+		}
+
+		if _, present := expanded_event["metric_value"]; present == false {
+			logp.Err("No metric_value found for: %v", event)
+			continue
+		}
 
 		metricTime, err := strconv.ParseInt(expanded_event["metric_timestamp"].(string), 10, 64)
 		if err != nil {
@@ -244,7 +281,7 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 				if err != nil {
 					logp.Err("An error occured while grouping the events: %v\n", err)
 				}
-				return events, line, offset, nil
+				return events, line, int64(thisTime), expanded_event["metric_tags"].(string), nil
 			} else {
 				logp.Debug("timestuff", "sleeping 5 seconds, no collected events yet")
 				time.Sleep(5 * time.Second)
@@ -261,7 +298,7 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 				if err != nil {
 					logp.Err("An error occured while grouping the events: %v\n", err)
 				}
-				return events, line, offset, nil
+				return events, line, int64(thisTime), expanded_event["metric_tags"].(string), nil
 			}
 		}
 	}
@@ -270,7 +307,7 @@ func (l *RedisInput) readKey(server redis.Conn, key string) ([]common.MapStr, ui
 	if err != nil {
 		logp.Err("An error occured while grouping the events: %v\n", err)
 	}
-	return events, line, offset, nil
+	return events, line, int64(thisTime), "", nil
 }
 
 // Seperate events by metric_name, average the values for each metric, emit averaged metrics
@@ -279,6 +316,11 @@ func (l *RedisInput) GroupEvents(events []common.MapStr) ([]common.MapStr, error
 	var empty_events []common.MapStr
 	sorted_events := map[string][]common.MapStr{}
 	for _, event := range events {
+		if _, present := event["metric_name"]; present == false {
+			logp.Err("No metric_name found for: %v", event)
+			continue
+			//return nil, new Error("No metric_name found")
+		}
 		metric_name = event["metric_name"].(string)
 		if sorted_events[metric_name] == nil {
 			sorted_events[metric_name] = empty_events
@@ -293,7 +335,7 @@ func (l *RedisInput) averageSortedEvents(sorted_events map[string][]common.MapSt
 	var output_events []common.MapStr
 	var merged_event common.MapStr
 	var metric_value_string string
-	var metric_value_bytes []byte
+	//var metric_value_bytes []byte
 	metric_value := 0.0
 	for _, events := range sorted_events {
 		metric_value = 0.0
@@ -302,8 +344,13 @@ func (l *RedisInput) averageSortedEvents(sorted_events map[string][]common.MapSt
 			merged_event.Update(event)
 			logp.Debug("groupstuff", "metric value: %v", event["metric_value"])
 			metric_value_string = event["metric_value"].(string)
-			metric_value_bytes = []byte(metric_value_string)
-			metric_value += float64(common.Bytes_Ntohll(metric_value_bytes))
+//			metric_value_bytes = []byte(metric_value_string)
+//			metric_value += float64(common.Bytes_Ntohll(metric_value_bytes))
+			metric_value_float, err := strconv.ParseFloat(metric_value_string, 65)
+			if (err != nil) {
+				logp.Err("Error parsing metric_value: %v", err)
+			}
+			metric_value += metric_value_float
 		}
 		logp.Debug("groupstuff", "the summed values is %v", metric_value)
 		logp.Debug("groupstuff", "the length is %v", float64(len(events)))
