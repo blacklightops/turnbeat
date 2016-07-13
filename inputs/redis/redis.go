@@ -167,8 +167,20 @@ func (l *RedisInput) handleConn(server redis.Conn, output chan common.MapStr, ke
 	
 // check that metric_name exists and metric_value
 	metric_event := common.MapStr{}
+	var value string;
 	for _, event := range event_slice {
-		metric_event[event["metric_name"].(string)] = event["metric_value"].(string)
+		switch vartype := event["metric_value"].(type) {
+		case int:
+			logp.Debug("redisinput", fmt.Sprintf("vartype is %s", vartype))
+			value = fmt.Sprintf("%v", event["metric_value"].(int))
+		case float64:
+			logp.Debug("redisinput", fmt.Sprintf("vartype is %s", vartype))
+			value = fmt.Sprintf("%v", event["metric_value"].(float64))
+		case string:
+			logp.Debug("redisinput", fmt.Sprintf("vartype is %s", vartype))
+			value = fmt.Sprintf("%v", event["metric_value"].(string))
+		}
+		metric_event[event["metric_name"].(string)] = value
 	}
 
 	event := common.MapStr{}
