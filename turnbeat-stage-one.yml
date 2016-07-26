@@ -15,7 +15,7 @@ output:
 filter:
   filters: ["graphite"]
 input:
-  tcp_2014:
+  tcp_2016:
     enabled: true
-    port: 2014
+    port: 2016
     type: "carbon"

@@ -15,6 +15,7 @@ import (
 	"github.com/blacklightops/turnbeat/inputs/tcp"
 	"github.com/blacklightops/turnbeat/inputs/udp"
 	"github.com/blacklightops/turnbeat/inputs/redis"
+	"github.com/blacklightops/turnbeat/inputs/stdin"
 	"strings"
 )
 
@@ -37,6 +38,8 @@ func newInputInstance(name string) inputs.InputInterface {
 	switch name {
 	case "tcp":
 		return new(tcp.TcpInput)
+	case "stdin":
+		return new(stdin.StdinInput)
 	case "udp":
 		return new(udp.UdpInput)
 	case "tail":
